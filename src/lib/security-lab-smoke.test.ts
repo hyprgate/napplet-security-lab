@@ -1,4 +1,4 @@
-// napps/security-lab/src/lib/security-lab-smoke.test.ts
+// napplets/security-lab/src/lib/security-lab-smoke.test.ts
 // Minimal smoke coverage for the security-lab probe-result builders (NAPP-01 test floor).
 // Asserts the deterministic ProbeResult shape the probe catalog depends on, without
 // touching network/sandbox behavior.

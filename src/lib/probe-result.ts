@@ -1,4 +1,4 @@
-// napps/security-lab/src/lib/probe-result.ts
+// napplets/security-lab/src/lib/probe-result.ts
 // Pure probe-result builders and formatting helpers, extracted from App.svelte so
 // they can be unit-tested without mounting the Svelte component (NAPP-01 test floor).
 
