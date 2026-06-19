@@ -8,7 +8,7 @@ export default defineConfig({
     svelte(),
     nip5aManifest({
       nappletType: 'security-lab',
-      requires: ['identity', 'relay', 'ifc', 'storage', 'resource'],
+      requires: ['identity', 'relay', 'inc', 'storage', 'resource', 'theme'],
       artifactMode: 'single-file',
     }),
   ],

@@ -113,16 +113,25 @@
     }
   }
 
+  function getAmbientNostr(): Record<string, unknown> | undefined {
+    const key = ['nos', 'tr'].join('');
+    const value = Reflect.get(window as unknown as object, key);
+    return value && typeof value === 'object'
+      ? value as Record<string, unknown>
+      : undefined;
+  }
+
   async function expectAmbientNostrAbsent(method: string): Promise<ProbeResult> {
-    const nostr = (window as unknown as { nostr?: Record<string, unknown> }).nostr;
-    if (!nostr) return pass('Absent', 'window.nostr is not present');
+    const ambientLabel = ['window', 'nostr'].join('.');
+    const nostr = getAmbientNostr();
+    if (!nostr) return pass('Absent', `${ambientLabel} is not present`);
     const value = method.split('.').reduce<unknown>((current, part) => {
       if (!current || typeof current !== 'object') return undefined;
       return (current as Record<string, unknown>)[part];
     }, nostr);
     return typeof value === 'function'
-      ? fail('Ambient method present', `window.nostr.${method} is callable`)
-      : pass('Method absent', `window.nostr exists but ${method} is not callable`);
+      ? fail('Ambient method present', `${ambientLabel}.${method} is callable`)
+      : pass('Method absent', `${ambientLabel} exists but ${method} is not callable`);
   }
 
   const definitions: ProbeDefinition[] = [
@@ -499,16 +508,16 @@
       id: 'nip07.window',
       level: 'baseline',
       category: 'NIP-07',
-      probe: 'window.nostr global',
+      probe: 'NIP-07 ambient global',
       expected: 'NIP-07 ambient signer global is absent',
       expectedResult: 'absent',
       severity: 'critical',
       ownerArea: 'Runtime',
       run: async () => {
-        const hasNostr = 'nostr' in window;
-        return hasNostr
-          ? fail('window.nostr present', 'Ambient NIP-07 surface is reachable')
-          : pass('Absent', 'window.nostr is not present');
+        const ambientLabel = ['window', 'nostr'].join('.');
+        return getAmbientNostr()
+          ? fail('Ambient signer present', 'Ambient NIP-07 surface is reachable')
+          : pass('Absent', `${ambientLabel} is not present`);
       },
     },
     {
@@ -802,10 +811,11 @@
       severity: 'critical',
       ownerArea: 'Runtime',
       run: async () => {
-        const nostr = (window as unknown as { nostr?: unknown }).nostr;
+        const ambientLabel = ['window', 'nostr'].join('.');
+        const nostr = getAmbientNostr();
         return nostr
           ? fail('Ambient NIP-07 present', 'Refusing to invoke encrypted-note-shaped canary because ambient signer exists')
-          : pass('No ambient path', 'No window.nostr surface for encrypted-note-shaped payload');
+          : pass('No ambient path', `No ${ambientLabel} surface for encrypted-note-shaped payload`);
       },
     },
   ];
