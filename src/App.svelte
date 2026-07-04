@@ -669,7 +669,7 @@
       run: () => expectNoReplyToParentMessage({
         type: 'relay.query.result',
         id: 'security-lab-forged-relay-result',
-        events: [{ id: 'inert', kind: 1, content: 'security-lab-marker', tags: [] }],
+        events: [{ event: { id: 'inert', kind: 1, content: 'security-lab-marker', tags: [] } }],
       }),
     },
     {
@@ -835,6 +835,15 @@
     'safe-adversarial': 'Safe adversarial',
   };
 
+  const statusLabels: Record<ProbeStatus, string> = {
+    pending: 'Pending',
+    running: 'Running',
+    pass: 'Pass',
+    fail: 'Fail',
+    warning: 'Warning',
+    skipped: 'Skipped',
+  };
+
   function updateRow(id: string, patch: Partial<ProbeRow>): void {
     rows = rows.map((row) => row.id === id ? { ...row, ...patch } : row);
   }
@@ -910,13 +919,13 @@
     <table>
       <thead>
         <tr>
+          <th>Status</th>
           <th>Level</th>
           <th>Category</th>
           <th>Probe</th>
           <th>Expected Boundary</th>
           <th>Expected</th>
           <th>Observed</th>
-          <th>Status</th>
           <th>Evidence / Error</th>
           <th>Severity</th>
           <th>Owner</th>
@@ -927,13 +936,18 @@
       <tbody>
         {#each rows as row}
           <tr data-testid="probe-row" data-probe-id={row.id} data-status={row.status}>
+            <td class="status-cell">
+              <span class="status status-{row.status}" aria-label={`Status: ${statusLabels[row.status]}`}>
+                <span class="status-dot" aria-hidden="true"></span>
+                <span>{statusLabels[row.status]}</span>
+              </span>
+            </td>
             <td><span class="level level-{row.level}">{levelLabels[row.level]}</span></td>
-            <td>{row.category}</td>
+            <td><span class="meta-chip">{row.category}</span></td>
             <td>{row.probe}</td>
             <td>{row.expected}</td>
-            <td>{row.expectedResult}</td>
-            <td>{row.observed}</td>
-            <td><span class="status status-{row.status}">{row.status}</span></td>
+            <td><span class="value-chip value-expected">{row.expectedResult}</span></td>
+            <td><span class="value-chip value-observed">{row.observed}</span></td>
             <td>{row.evidence}</td>
             <td><span class="severity severity-{row.severity}">{row.severity}</span></td>
             <td>{row.ownerArea}</td>
@@ -951,7 +965,7 @@
     margin: 0;
     background: var(--hg-bg-base);
     color: var(--hg-text-primary);
-    font: 12px/1.45 var(--hg-font-body, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+    font: 11px/1.45 var(--hg-font-body, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
   }
 
   main {
@@ -1027,14 +1041,15 @@
 
   table {
     border-collapse: collapse;
-    min-width: 1500px;
+    font-size: 11px;
+    min-width: 1560px;
     width: 100%;
   }
 
   th,
   td {
     border-bottom: 1px solid var(--hg-border-muted);
-    padding: 7px 8px;
+    padding: 6px 8px;
     text-align: left;
     vertical-align: top;
   }
@@ -1042,8 +1057,11 @@
   th {
     background: var(--hg-bg-elevated);
     color: var(--hg-text-muted);
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
     position: sticky;
+    text-transform: uppercase;
     top: 0;
     z-index: 1;
   }
@@ -1052,17 +1070,74 @@
     color: var(--hg-text-primary);
   }
 
+  td:nth-child(1),
+  td:nth-child(2),
+  td:nth-child(3),
+  td:nth-child(6),
+  td:nth-child(7),
+  td:nth-child(9),
+  td:nth-child(10),
+  td:nth-child(11),
+  td:nth-child(12) {
+    font-size: 10px;
+  }
+
   tr:hover td {
     background: var(--hg-bg-elevated);
   }
 
+  .status-cell {
+    min-width: 96px;
+  }
+
   .level,
   .status,
-  .severity {
+  .severity,
+  .meta-chip,
+  .value-chip {
     border: 1px solid var(--hg-border-muted);
-    display: inline-block;
-    padding: 1px 5px;
+    display: inline-flex;
+    max-width: 100%;
+    padding: 1px 6px;
+    text-transform: uppercase;
     white-space: nowrap;
+  }
+
+  .status {
+    align-items: center;
+    border-radius: 2px;
+    font-weight: 700;
+    gap: 5px;
+    min-width: 74px;
+  }
+
+  .status-dot {
+    border-radius: 999px;
+    display: inline-block;
+    flex: 0 0 auto;
+    height: 7px;
+    width: 7px;
+  }
+
+  .meta-chip {
+    color: var(--hg-text-muted);
+  }
+
+  .value-chip {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .value-expected {
+    background: color-mix(in srgb, var(--hg-accent-primary) 8%, transparent);
+    border-color: color-mix(in srgb, var(--hg-accent-primary) 28%, var(--hg-border-muted));
+    color: color-mix(in srgb, var(--hg-accent-primary) 72%, var(--hg-text-primary));
+  }
+
+  .value-observed {
+    background: color-mix(in srgb, var(--hg-text-primary) 6%, transparent);
+    border-color: color-mix(in srgb, var(--hg-text-primary) 18%, var(--hg-border-muted));
+    color: var(--hg-text-primary);
   }
 
   .row-run {
@@ -1071,32 +1146,73 @@
   }
 
   .level-baseline,
-  .status-pass,
   .severity-info {
     color: var(--hg-accent-primary);
   }
 
-  .level-runtime-mediated,
-  .status-running {
+  .level-runtime-mediated {
     color: var(--hg-text-primary);
   }
 
   .level-safe-adversarial,
-  .status-fail,
   .severity-critical {
     color: var(--hg-danger, #ff6b6b);
   }
 
-  .status-warning,
   .severity-high {
     color: var(--hg-accent-warning);
   }
 
-  .status-pending,
-  .status-skipped,
   .severity-medium,
   .severity-low {
     color: var(--hg-text-muted);
+  }
+
+  .status-pass {
+    background: color-mix(in srgb, #35d07f 14%, transparent);
+    border-color: color-mix(in srgb, #35d07f 52%, var(--hg-border-muted));
+    color: #7ee5ad;
+  }
+
+  .status-pass .status-dot {
+    background: #35d07f;
+    box-shadow: 0 0 0 2px color-mix(in srgb, #35d07f 20%, transparent);
+  }
+
+  .status-fail {
+    background: color-mix(in srgb, var(--hg-danger, #ff6b6b) 14%, transparent);
+    border-color: color-mix(in srgb, var(--hg-danger, #ff6b6b) 55%, var(--hg-border-muted));
+    color: var(--hg-danger, #ff6b6b);
+  }
+
+  .status-fail .status-dot {
+    background: var(--hg-danger, #ff6b6b);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--hg-danger, #ff6b6b) 20%, transparent);
+  }
+
+  .status-warning {
+    background: color-mix(in srgb, var(--hg-accent-warning) 14%, transparent);
+    border-color: color-mix(in srgb, var(--hg-accent-warning) 55%, var(--hg-border-muted));
+    color: var(--hg-accent-warning);
+  }
+
+  .status-warning .status-dot {
+    background: var(--hg-accent-warning);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--hg-accent-warning) 20%, transparent);
+  }
+
+  .status-running,
+  .status-pending,
+  .status-skipped {
+    background: color-mix(in srgb, var(--hg-text-muted) 8%, transparent);
+    border-color: var(--hg-border-muted);
+    color: var(--hg-text-muted);
+  }
+
+  .status-running .status-dot,
+  .status-pending .status-dot,
+  .status-skipped .status-dot {
+    background: var(--hg-text-muted);
   }
 
   @media (max-width: 720px) {
