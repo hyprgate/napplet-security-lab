@@ -3,7 +3,9 @@
 // Asserts the deterministic ProbeResult shape the probe catalog depends on, without
 // touching network/sandbox behavior.
 
-import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { pass, fail, warning, skipped, errorText, short } from './probe-result';
 
 describe('security-lab probe-result builders', () => {
@@ -42,5 +44,13 @@ describe('security-lab formatting helpers', () => {
 
   it('short leaves short strings intact', () => {
     expect(short('tiny')).toBe('tiny');
+  });
+});
+
+describe('security-lab runtime INC probe', () => {
+  it('declares the inert runtime probe through the public two-argument INC binding', () => {
+    const appSource = readFileSync(resolve(process.cwd(), 'src/App.svelte'), 'utf8');
+
+    expect(appSource).toContain("inc.emit('security-lab:runtime-ifc-probe', { inert: true });");
   });
 });

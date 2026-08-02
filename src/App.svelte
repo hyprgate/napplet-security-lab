@@ -580,18 +580,18 @@
       },
     },
     {
-      id: 'runtime.ifc.emit',
+      id: 'runtime.inc.emit',
       level: 'runtime-mediated',
       category: 'Runtime',
-      probe: 'Shell-mediated IFC emit',
-      expected: 'IFC emits only through the declared runtime capability',
+      probe: 'Shell-mediated INC emit',
+      expected: 'INC emits only through the declared runtime capability',
       expectedResult: 'allowed-via-runtime',
       severity: 'low',
       ownerArea: 'SDK',
       run: async () => {
         try {
-          inc.emit('security-lab:phase63-probe', [['probe', 'runtime.ifc.emit']], JSON.stringify({ inert: true }));
-          return pass('Allowed via runtime', 'ifc.emit returned without direct browser channel access');
+          inc.emit('security-lab:runtime-ifc-probe', { inert: true });
+          return pass('Allowed via runtime', 'inc.emit returned without direct browser channel access');
         } catch (err) {
           return warning('Runtime denied/unavailable', errorText(err));
         }
