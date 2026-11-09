@@ -11,6 +11,7 @@
     type ProbeStatus,
     type ProbeResult,
   } from './lib/probe-result';
+  import { filterProbes, runVerdict, type StatusFilter } from './lib/probe-filter';
 
   type ProbeLevel = 'baseline' | 'runtime-mediated' | 'safe-adversarial';
   type ExpectedResult = 'denied' | 'absent' | 'unusable' | 'opaque' | 'allowed-via-runtime';
@@ -828,6 +829,19 @@
     lastRun: '-',
   })));
   let runningAll = $state(false);
+  let statusFilter = $state<StatusFilter>('all');
+  let levelFilter = $state('all');
+  let query = $state('');
+  let expanded = $state<Record<string, boolean>>({});
+
+  const visibleRows = $derived(filterProbes(rows, { status: statusFilter, level: levelFilter, query }));
+  const hasFilters = $derived(statusFilter !== 'all' || levelFilter !== 'all' || query.trim() !== '');
+
+  function clearFilters(): void {
+    statusFilter = 'all';
+    levelFilter = 'all';
+    query = '';
+  }
 
   const levelLabels: Record<ProbeLevel, string> = {
     'baseline': 'Baseline',
@@ -888,6 +902,15 @@
     return acc;
   }, { 'baseline': 0, 'runtime-mediated': 0, 'safe-adversarial': 0 }));
 
+  const verdict = $derived(runVerdict(counts));
+  const filterButtons = $derived<Array<{ id: StatusFilter; label: string; count: number }>>([
+    { id: 'all', label: 'All', count: rows.length },
+    { id: 'fail', label: 'Fail', count: counts.fail },
+    { id: 'warning', label: 'Warning', count: counts.warning },
+    { id: 'pass', label: 'Pass', count: counts.pass },
+    { id: 'skipped', label: 'Skipped', count: counts.skipped },
+  ]);
+
   onMount(() => {
     void runAll();
   });
@@ -895,24 +918,37 @@
 
 <main data-testid="security-lab">
   <header class="mast">
-    <div class="actions">
-      <div class="levels" aria-label="Probe levels">
-        {#each Object.entries(levelCounts) as [level, count]}
-          <span><b>{count}</b>{levelLabels[level as ProbeLevel]}</span>
-        {/each}
-      </div>
-      <button onclick={runAll} disabled={runningAll} data-testid="run-all-probes">
-        {runningAll ? 'running' : 'run all'}
-      </button>
+    <div class="verdict verdict-{verdict.tone}" role="status" data-testid="probe-verdict">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>{verdict.text}</span>
     </div>
+    <button class="run-all" onclick={runAll} disabled={runningAll} data-testid="run-all-probes">
+      {runningAll ? 'Running…' : 'Run all'}
+    </button>
   </header>
 
-  <section class="summary" aria-label="Probe status summary">
-    <span class="status-pass"><b>{counts.pass}</b> pass</span>
-    <span class="status-fail"><b>{counts.fail}</b> fail</span>
-    <span class="status-warning"><b>{counts.warning}</b> warning</span>
-    <span class="status-skipped"><b>{counts.skipped}</b> skipped</span>
-    <span class="status-pending"><b>{counts.pending + counts.running}</b> pending/running</span>
+  <section class="filters" aria-label="Filter probes">
+    <div class="filter-buttons" role="group" aria-label="Filter by result">
+      {#each filterButtons as filter (filter.id)}
+        <button
+          type="button"
+          class="filter filter-{filter.id}"
+          class:active={statusFilter === filter.id}
+          aria-pressed={statusFilter === filter.id}
+          onclick={() => { statusFilter = filter.id; }}
+          data-testid="probe-filter-{filter.id}"
+        >{filter.label} <b>{filter.count}</b></button>
+      {/each}
+    </div>
+    <div class="filter-fields">
+      <select aria-label="Filter by level" bind:value={levelFilter} data-testid="probe-filter-level">
+        <option value="all">All levels</option>
+        {#each Object.entries(levelCounts) as [level, count]}
+          <option value={level}>{levelLabels[level as ProbeLevel]} ({count})</option>
+        {/each}
+      </select>
+      <input type="search" aria-label="Search probes" placeholder="Search probes and evidence" bind:value={query} />
+    </div>
   </section>
 
   <section class="table-shell" aria-label="Security boundary probe table">
@@ -920,21 +956,15 @@
       <thead>
         <tr>
           <th>Status</th>
-          <th>Level</th>
-          <th>Category</th>
           <th>Probe</th>
-          <th>Expected Boundary</th>
-          <th>Expected</th>
-          <th>Observed</th>
-          <th>Evidence / Error</th>
-          <th>Severity</th>
-          <th>Owner</th>
-          <th>Last Run</th>
-          <th>Run</th>
+          <th class="col-wide">Expected</th>
+          <th class="col-wide">Observed</th>
+          <th class="col-wide">Severity</th>
+          <th><span class="sr-only">Run</span></th>
         </tr>
       </thead>
       <tbody>
-        {#each rows as row}
+        {#each visibleRows as row (row.id)}
           <tr data-testid="probe-row" data-probe-id={row.id} data-status={row.status}>
             <td class="status-cell">
               <span class="status status-{row.status}" aria-label={`Status: ${statusLabels[row.status]}`}>
@@ -942,17 +972,56 @@
                 <span>{statusLabels[row.status]}</span>
               </span>
             </td>
-            <td><span class="level level-{row.level}">{levelLabels[row.level]}</span></td>
-            <td><span class="meta-chip">{row.category}</span></td>
-            <td>{row.probe}</td>
-            <td>{row.expected}</td>
-            <td><span class="value-chip value-expected">{row.expectedResult}</span></td>
-            <td><span class="value-chip value-observed">{row.observed}</span></td>
-            <td>{row.evidence}</td>
-            <td><span class="severity severity-{row.severity}">{row.severity}</span></td>
-            <td>{row.ownerArea}</td>
-            <td>{row.lastRun}</td>
-            <td><button class="row-run" onclick={() => runProbe(row.id)} disabled={row.status === 'running'} data-testid="run-probe-{row.id}">run</button></td>
+            <td class="probe-cell">
+              <button
+                type="button"
+                class="probe-toggle"
+                aria-expanded={expanded[row.id] === true}
+                aria-controls={`probe-detail-${row.id}`}
+                onclick={() => { expanded[row.id] = !expanded[row.id]; }}
+                data-testid="probe-expand"
+              >
+                <span class="chevron" class:open={expanded[row.id]} aria-hidden="true">›</span>
+                <span class="probe-text">
+                  <span class="probe-name">{row.probe}</span>
+                  <span class="probe-meta">{row.category}, {levelLabels[row.level]}</span>
+                  {#if row.status === 'fail'}<span class="probe-evidence">{row.evidence}</span>{/if}
+                </span>
+              </button>
+            </td>
+            <td class="col-wide nowrap muted">{row.expectedResult}</td>
+            <td class="col-wide observed">{row.observed}</td>
+            <td class="col-wide"><span class="severity severity-{row.severity}">{row.severity}</span></td>
+            <td class="run-cell">
+              <button class="row-run" aria-label={`Run ${row.probe} again`} onclick={() => runProbe(row.id)} disabled={row.status === 'running'} data-testid="run-probe-{row.id}">Run</button>
+            </td>
+          </tr>
+          {#if expanded[row.id]}
+            <tr class="detail-row" id={`probe-detail-${row.id}`} data-testid="probe-detail">
+              <td colspan="6">
+                <dl>
+                  <div class="wide"><dt>Expected boundary</dt><dd>{row.expected}</dd></div>
+                  <div class="wide"><dt>Evidence</dt><dd class="evidence">{row.evidence}</dd></div>
+                  <div><dt>Expected</dt><dd>{row.expectedResult}</dd></div>
+                  <div><dt>Observed</dt><dd>{row.observed}</dd></div>
+                  <div><dt>Severity</dt><dd>{row.severity}</dd></div>
+                  <div><dt>Owner</dt><dd>{row.ownerArea}</dd></div>
+                  <div><dt>Last run</dt><dd>{row.lastRun}</dd></div>
+                  <div><dt>Probe id</dt><dd>{row.id}</dd></div>
+                </dl>
+              </td>
+            </tr>
+          {/if}
+        {:else}
+          <tr>
+            <td colspan="6" class="no-rows" data-testid="probe-no-rows">
+              {#if statusFilter === 'fail' && !query.trim() && levelFilter === 'all' && counts.pending + counts.running === 0}
+                <p>No failures in this run.</p>
+              {:else}
+                <p>No probes match these filters.</p>
+              {/if}
+              {#if hasFilters}<button type="button" onclick={clearFilters}>Show all probes</button>{/if}
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -965,269 +1034,99 @@
     margin: 0;
     background: var(--hg-bg-base);
     color: var(--hg-text-primary);
-    font: 11px/1.45 var(--hg-font-body, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+    font: 12px/1.45 var(--hg-font-body);
   }
 
   main {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    min-height: 100vh;
-    padding: 12px;
-  }
-
-  .mast {
-    align-items: end;
-    border-bottom: 1px solid var(--hg-border-muted);
-    display: flex;
-    gap: 12px;
-    justify-content: space-between;
-    padding-bottom: 6px;
-  }
-
-  .actions {
-    align-items: center;
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
     gap: 8px;
-    justify-content: space-between;
-    width: 100%;
+    height: 100vh;
+    padding: 10px 12px;
   }
 
-  .levels,
-  .summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: flex-end;
-  }
+  button, select, input { font: inherit; color: var(--hg-text-primary); }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; opacity: .55; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--hg-accent-primary); outline-offset: 1px; }
 
-  .levels span,
-  .summary span {
-    border: 1px solid var(--hg-border-muted);
-    color: var(--hg-text-muted);
-    display: inline-flex;
-    gap: 6px;
-    padding: 3px 6px;
-  }
+  .mast { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .verdict { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .status-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--hg-text-muted); }
+  .verdict-pass .status-dot, .status-pass .status-dot { background: var(--hg-accent-success); }
+  .verdict-fail .status-dot, .status-fail .status-dot { background: var(--hg-accent-danger); }
+  .verdict-warning .status-dot, .status-warning .status-dot { background: var(--hg-accent-warning); }
+  .verdict-fail { color: var(--hg-accent-danger); }
 
-  .levels b,
-  .summary b {
-    color: var(--hg-accent-primary);
+  .run-all, .row-run, .no-rows button, select, input {
+    padding: 4px 10px;
+    border: 1px solid var(--hg-border-default);
+    border-radius: 4px;
+    background: var(--hg-bg-surface);
   }
+  .run-all { flex: 0 0 auto; font-weight: 600; }
+  .run-all:hover:not(:disabled), .row-run:hover:not(:disabled), .no-rows button:hover { border-color: var(--hg-accent-primary); }
 
-  button {
-    background: var(--hg-bg-elevated);
-    border: 1px solid var(--hg-border-accent);
-    color: var(--hg-accent-primary);
-    cursor: pointer;
-    font: inherit;
-    padding: 4px 8px;
-  }
+  .filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+  .filter-buttons, .filter-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .filter-fields { flex: 1 1 280px; justify-content: flex-end; }
+  .filter-fields input { flex: 1 1 160px; min-width: 0; max-width: 320px; }
+  input::placeholder { color: var(--hg-text-muted); opacity: .75; }
+  .filter { padding: 3px 9px; border: 1px solid var(--hg-border-default); border-radius: 4px; color: var(--hg-text-secondary); background: none; }
+  .filter b { color: var(--hg-text-primary); }
+  .filter:hover { border-color: var(--hg-accent-primary); }
+  .filter.active { border-color: var(--hg-accent-primary); color: var(--hg-text-primary); background: color-mix(in srgb, var(--hg-accent-primary) 18%, transparent); }
 
-  button:disabled {
-    border-color: var(--hg-border-muted);
-    color: var(--hg-text-muted);
-    cursor: default;
-  }
+  .table-shell { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--hg-border-default); border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { position: sticky; top: 0; z-index: 1; padding: 6px 8px; color: var(--hg-text-muted); background: var(--hg-bg-surface); font-size: 11px; font-weight: 600; text-align: left; white-space: nowrap; }
+  tbody td { padding: 5px 8px; border-top: 1px solid var(--hg-border-muted); vertical-align: top; }
+  tbody tr[data-testid='probe-row']:hover { background: color-mix(in srgb, var(--hg-text-primary) 4%, transparent); }
+  tr[data-status='fail'] { background: color-mix(in srgb, var(--hg-accent-danger) 9%, transparent); }
+  .nowrap { white-space: nowrap; }
+  .muted { color: var(--hg-text-muted); }
+  .observed { overflow-wrap: anywhere; }
 
-  .table-shell {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-  }
+  .status { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .status-pass { color: var(--hg-accent-success); }
+  .status-fail { color: var(--hg-accent-danger); font-weight: 700; }
+  .status-warning { color: var(--hg-accent-warning); }
+  .status-pending, .status-running, .status-skipped { color: var(--hg-text-muted); }
 
-  table {
-    border-collapse: collapse;
-    font-size: 11px;
-    min-width: 1560px;
-    width: 100%;
-  }
+  .probe-cell { width: 55%; }
+  .probe-toggle { display: flex; gap: 6px; width: 100%; padding: 0; border: 0; background: none; text-align: left; }
+  .chevron { flex: 0 0 8px; align-self: flex-start; height: 1.45em; line-height: 1.45; text-align: center; color: var(--hg-text-muted); transition: transform .1s; }
+  .chevron.open { transform: rotate(90deg); }
+  .probe-text { display: grid; min-width: 0; }
+  .probe-name { overflow-wrap: anywhere; }
+  .probe-meta { color: var(--hg-text-muted); font-size: 11px; }
+  .probe-evidence { overflow: hidden; color: var(--hg-accent-danger); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+  .probe-toggle:hover .probe-name { text-decoration: underline; text-underline-offset: 2px; }
 
-  th,
-  td {
-    border-bottom: 1px solid var(--hg-border-muted);
-    padding: 6px 8px;
-    text-align: left;
-    vertical-align: top;
-  }
+  .severity { white-space: nowrap; color: var(--hg-text-secondary); }
+  .severity-critical { color: var(--hg-accent-danger); font-weight: 700; }
+  .severity-high { color: var(--hg-accent-warning); font-weight: 600; }
+  .run-cell { text-align: right; }
+  .row-run { padding: 2px 8px; }
 
-  th {
-    background: var(--hg-bg-elevated);
-    color: var(--hg-text-muted);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0;
-    position: sticky;
-    text-transform: uppercase;
-    top: 0;
-    z-index: 1;
-  }
+  .detail-row td { background: var(--hg-bg-surface); }
+  dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; margin: 2px 0 4px 14px; }
+  dl .wide { grid-column: 1 / -1; }
+  dt { color: var(--hg-text-muted); font-size: 11px; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .evidence { white-space: pre-wrap; }
 
-  td {
-    color: var(--hg-text-primary);
-  }
+  .no-rows { padding: 24px 12px; text-align: center; color: var(--hg-text-muted); }
+  .no-rows p { margin: 0 0 8px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-  td:nth-child(1),
-  td:nth-child(2),
-  td:nth-child(3),
-  td:nth-child(6),
-  td:nth-child(7),
-  td:nth-child(9),
-  td:nth-child(10),
-  td:nth-child(11),
-  td:nth-child(12) {
-    font-size: 10px;
-  }
-
-  tr:hover td {
-    background: var(--hg-bg-elevated);
-  }
-
-  .status-cell {
-    min-width: 96px;
-  }
-
-  .level,
-  .status,
-  .severity,
-  .meta-chip,
-  .value-chip {
-    border: 1px solid var(--hg-border-muted);
-    display: inline-flex;
-    max-width: 100%;
-    padding: 1px 6px;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
-  .status {
-    align-items: center;
-    border-radius: 2px;
-    font-weight: 700;
-    gap: 5px;
-    min-width: 74px;
-  }
-
-  .status-dot {
-    border-radius: 999px;
-    display: inline-block;
-    flex: 0 0 auto;
-    height: 7px;
-    width: 7px;
-  }
-
-  .meta-chip {
-    color: var(--hg-text-muted);
-  }
-
-  .value-chip {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .value-expected {
-    background: color-mix(in srgb, var(--hg-accent-primary) 8%, transparent);
-    border-color: color-mix(in srgb, var(--hg-accent-primary) 28%, var(--hg-border-muted));
-    color: color-mix(in srgb, var(--hg-accent-primary) 72%, var(--hg-text-primary));
-  }
-
-  .value-observed {
-    background: color-mix(in srgb, var(--hg-text-primary) 6%, transparent);
-    border-color: color-mix(in srgb, var(--hg-text-primary) 18%, var(--hg-border-muted));
-    color: var(--hg-text-primary);
-  }
-
-  .row-run {
-    min-width: 42px;
-    padding: 2px 6px;
-  }
-
-  .level-baseline,
-  .severity-info {
-    color: var(--hg-accent-primary);
-  }
-
-  .level-runtime-mediated {
-    color: var(--hg-text-primary);
-  }
-
-  .level-safe-adversarial,
-  .severity-critical {
-    color: var(--hg-danger, #ff6b6b);
-  }
-
-  .severity-high {
-    color: var(--hg-accent-warning);
-  }
-
-  .severity-medium,
-  .severity-low {
-    color: var(--hg-text-muted);
-  }
-
-  .status-pass {
-    background: color-mix(in srgb, #35d07f 14%, transparent);
-    border-color: color-mix(in srgb, #35d07f 52%, var(--hg-border-muted));
-    color: #7ee5ad;
-  }
-
-  .status-pass .status-dot {
-    background: #35d07f;
-    box-shadow: 0 0 0 2px color-mix(in srgb, #35d07f 20%, transparent);
-  }
-
-  .status-fail {
-    background: color-mix(in srgb, var(--hg-danger, #ff6b6b) 14%, transparent);
-    border-color: color-mix(in srgb, var(--hg-danger, #ff6b6b) 55%, var(--hg-border-muted));
-    color: var(--hg-danger, #ff6b6b);
-  }
-
-  .status-fail .status-dot {
-    background: var(--hg-danger, #ff6b6b);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--hg-danger, #ff6b6b) 20%, transparent);
-  }
-
-  .status-warning {
-    background: color-mix(in srgb, var(--hg-accent-warning) 14%, transparent);
-    border-color: color-mix(in srgb, var(--hg-accent-warning) 55%, var(--hg-border-muted));
-    color: var(--hg-accent-warning);
-  }
-
-  .status-warning .status-dot {
-    background: var(--hg-accent-warning);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--hg-accent-warning) 20%, transparent);
-  }
-
-  .status-running,
-  .status-pending,
-  .status-skipped {
-    background: color-mix(in srgb, var(--hg-text-muted) 8%, transparent);
-    border-color: var(--hg-border-muted);
-    color: var(--hg-text-muted);
-  }
-
-  .status-running .status-dot,
-  .status-pending .status-dot,
-  .status-skipped .status-dot {
-    background: var(--hg-text-muted);
-  }
-
+  @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
   @media (max-width: 720px) {
-    .mast {
-      align-items: stretch;
-      flex-direction: column;
-    }
-
-    .actions {
-      align-items: flex-start;
-    }
-
-    .levels,
-    .summary {
-      justify-content: flex-start;
-    }
+    .col-wide { display: none; }
+    .probe-cell { width: auto; }
+    .verdict { font-size: 13px; }
+    .filter-fields { justify-content: flex-start; }
+    .filter-fields input { max-width: none; }
   }
 </style>

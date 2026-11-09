@@ -12,16 +12,25 @@ Security Lab intentionally runs as a napplet so it can test the sandboxed
 environment provided by the Hyprgate runtime. It is not a rapplet: rapplets are
 Hyprgate-owned runtime applets and are not sandboxed.
 
-## Parent Checkout
+The app is tracked in this repo at `napplets/security-lab`; the standalone repository
+is a generated, read-only mirror. Probes run when it opens. The verdict line says how
+the run went, the result buttons filter the table, and each row expands to its full
+evidence.
+
+Run it against the real sandbox when you trust the result. Test harnesses that mock
+`WebSocket` bypass CSP, so a direct-socket probe can report a connection the browser
+would refuse.
+
+## Commands
 
 ```bash
-pnpm --filter @hyprgate/napp-security-lab test
-pnpm --filter @hyprgate/napp-security-lab build
+pnpm --filter ./napplets/security-lab test
+pnpm --filter ./napplets/security-lab build
 ```
 ## Paja runtime
 
 ```bash
-pnpm --filter @hyprgate/napp-security-lab paja
+pnpm --filter ./napplets/security-lab paja
 ```
 
 This starts Kehto Paja and the napplet's Vite dev server together, using
